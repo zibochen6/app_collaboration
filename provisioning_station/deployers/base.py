@@ -47,6 +47,11 @@ class BaseDeployer(ABC):
         """
         pass
 
+    def _describe_connection(self, connection: Dict[str, Any]) -> str:
+        """Summarize connection keys for error messages."""
+        keys = sorted(k for k in connection if not k.startswith("_"))
+        return f"[{', '.join(keys)}]" if keys else "[empty]"
+
     async def _report_progress(
         self,
         callback: Optional[Callable],

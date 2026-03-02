@@ -176,11 +176,19 @@ class ReCameraNodeRedDeployer(NodeRedDeployer):
         ssh_password = connection.get("ssh_password")
 
         if not recamera_ip:
-            logger.info("No SSH credentials provided, skipping service management")
+            received = self._describe_connection(connection)
+            logger.info(
+                f"No SSH host found (expected 'host'/'recamera_ip'), "
+                f"skipping service management. Received keys: {received}"
+            )
             return True
 
         if not ssh_password:
-            logger.info("No SSH password provided, skipping service management")
+            received = self._describe_connection(connection)
+            logger.info(
+                f"No SSH password found (expected 'password'/'ssh_password'), "
+                f"skipping service management. Received keys: {received}"
+            )
             return True
 
         try:

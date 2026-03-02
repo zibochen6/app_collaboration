@@ -43,10 +43,18 @@ class NodeRedDeployer(BaseDeployer):
         nodered_config = config.nodered
 
         # Get connection parameters
-        nodered_host = connection.get("nodered_host") or connection.get("recamera_ip")
+        nodered_host = (
+            connection.get("nodered_host")
+            or connection.get("recamera_ip")
+            or connection.get("host")
+        )
         if not nodered_host:
+            received = self._describe_connection(connection)
             await self._report_progress(
-                progress_callback, "connect", 0, "Node-RED host address is required"
+                progress_callback,
+                "connect",
+                0,
+                f"Missing host. Expected key: 'host' (or 'nodered_host'/'recamera_ip'). Received: {received}",
             )
             return False
 

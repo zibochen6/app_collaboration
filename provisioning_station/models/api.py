@@ -216,3 +216,76 @@ class SolutionUpdate(BaseModel):
     difficulty: Optional[str] = None
     estimated_time: Optional[str] = None
     enabled: Optional[bool] = None
+
+
+# ============================================
+# AI-Friendly Deploy Info Models
+# ============================================
+
+
+class DeployParameter(BaseModel):
+    """A single connection parameter for a deployment step"""
+
+    key: str
+    type: str = "text"
+    required: bool = False
+    default: Optional[str] = None
+    description: Optional[str] = None
+    example: Optional[str] = None
+
+
+class DeployStepInfo(BaseModel):
+    """Step info for AI-friendly deploy-info endpoint"""
+
+    device_id: str
+    name: str
+    type: str
+    required: bool = True
+    targets: Optional[List[Dict[str, Any]]] = None
+    # List[DeployParameter] for simple steps, Dict[str, List[DeployParameter]] for steps with targets
+    parameters: Any = None
+
+
+class DeployInfoResponse(BaseModel):
+    """AI-friendly deployment info with request template"""
+
+    solution_id: str
+    solution_name: str
+    presets: List[Dict[str, str]]
+    steps: List[DeployStepInfo]
+    request_template: Dict[str, Any]
+
+
+# ============================================
+# Deployment Summary Models
+# ============================================
+
+
+class StepSummaryInfo(BaseModel):
+    """Step summary within a device deployment"""
+
+    name: str
+    status: str
+    message: Optional[str] = None
+
+
+class DeviceSummaryInfo(BaseModel):
+    """Device deployment summary"""
+
+    device_id: str
+    status: str
+    steps: List[StepSummaryInfo]
+    error: Optional[str] = None
+
+
+class DeploymentSummaryResponse(BaseModel):
+    """Deployment summary with errors and warnings extracted from logs"""
+
+    deployment_id: str
+    solution_id: str
+    status: str
+    started_at: datetime
+    duration_seconds: Optional[float] = None
+    devices: List[DeviceSummaryInfo]
+    errors: List[str]
+    warnings: List[str]

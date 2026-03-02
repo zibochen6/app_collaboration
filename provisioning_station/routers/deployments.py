@@ -9,9 +9,12 @@ from fastapi import APIRouter, HTTPException, Query
 from ..models.api import (
     DeploymentListItem,
     DeploymentStatusResponse,
+    DeploymentSummaryResponse,
     DeviceDeploymentStatus,
+    DeviceSummaryInfo,
     StartDeploymentRequest,
     StepSummary,
+    StepSummaryInfo,
 )
 from ..models.deployment import DeploymentStatus
 from ..services.deployment_engine import deployment_engine
@@ -101,6 +104,83 @@ async def get_deployment_status(deployment_id: str):
         completed_at=deployment.completed_at,
         devices=device_statuses,
         overall_progress=overall_progress,
+    )
+
+
+@router.get("/{deployment_id}/summary", response_model=DeploymentSummaryResponse)
+async def get_deployment_summary(deployment_id: str):
+    """Get a concise deployment summary with errors and warnings.
+
+    Extracts actionable information from deployment logs:
+    - Per-device and per-step status
+    - Error messages (from error-level logs)
+    - Warning signals (from logs mentioning clock, sync, retry, timeout, etc.)
+    - Duration in seconds
+    """
+    deployment = deployment_engine.get_deployment(deployment_id)
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+
+    # Calculate duration
+    duration_seconds = None
+    if deployment.completed_at and deployment.started_at:
+        duration_seconds = (
+            deployment.completed_at - deployment.started_at
+        ).total_seconds()
+
+    # Build device summaries
+    devices = []
+    for device in deployment.devices:
+        step_summaries = []
+        for step in device.steps:
+            step_summaries.append(
+                StepSummaryInfo(
+                    name=step.name,
+                    status=step.status,
+                    message=step.message,
+                )
+            )
+        devices.append(
+            DeviceSummaryInfo(
+                device_id=device.device_id,
+                status=(
+                    device.status.value
+                    if hasattr(device.status, "value")
+                    else str(device.status)
+                ),
+                steps=step_summaries,
+                error=device.error,
+            )
+        )
+
+    # Extract errors and warnings from logs
+    errors = []
+    warnings = []
+    warning_keywords = {"warning", "warn", "clock", "sync", "retry", "timeout", "slow"}
+
+    for log in deployment.logs:
+        if log.level == "error":
+            errors.append(log.message)
+        elif log.level == "warning":
+            warnings.append(log.message)
+        elif log.level == "info":
+            msg_lower = log.message.lower()
+            if any(kw in msg_lower for kw in warning_keywords):
+                warnings.append(log.message)
+
+    return DeploymentSummaryResponse(
+        deployment_id=deployment.id,
+        solution_id=deployment.solution_id,
+        status=(
+            deployment.status.value
+            if hasattr(deployment.status, "value")
+            else str(deployment.status)
+        ),
+        started_at=deployment.started_at,
+        duration_seconds=duration_seconds,
+        devices=devices,
+        errors=errors,
+        warnings=warnings,
     )
 
 

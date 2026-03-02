@@ -9,7 +9,15 @@ import markdown
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 
-from ..models.api import SolutionCreate, SolutionDetail, SolutionSummary, SolutionUpdate
+from ..models.api import (
+    DeployInfoResponse,
+    DeployParameter,
+    DeployStepInfo,
+    SolutionCreate,
+    SolutionDetail,
+    SolutionSummary,
+    SolutionUpdate,
+)
 from ..models.solution import DeviceGroupSection
 from ..services.solution_manager import solution_manager
 
@@ -862,6 +870,186 @@ async def get_deployment_info(
         "order": solution.deployment.order,
         "post_deployment": post_deployment,
     }
+
+
+@router.get("/{solution_id}/deploy-info", response_model=DeployInfoResponse)
+async def get_deploy_info(
+    solution_id: str,
+    lang: str = Query("en", pattern="^(en|zh)$"),
+    preset_id: Optional[str] = Query(
+        None, description="Filter steps for a specific preset"
+    ),
+):
+    """AI-friendly deployment info endpoint.
+
+    Returns all parameters needed to start a deployment, plus a ready-to-fill
+    request template for POST /api/deployments/start.
+    """
+    solution = solution_manager.get_solution(solution_id)
+    if not solution:
+        raise HTTPException(status_code=404, detail="Solution not found")
+
+    deployment_info = await solution_manager.get_deployment_from_guide(
+        solution_id, lang
+    )
+    if not deployment_info:
+        raise HTTPException(
+            status_code=404, detail="Deployment guide not found for this solution"
+        )
+
+    # Build presets list
+    presets = []
+    for p in deployment_info.get("presets", []):
+        presets.append({"id": p["id"], "name": p.get("name", p["id"])})
+
+    # Determine which devices to include
+    if preset_id:
+        # Find the preset and only include its devices
+        preset_device_ids = None
+        for p in deployment_info.get("presets", []):
+            if p["id"] == preset_id:
+                preset_device_ids = set(p.get("devices", []))
+                break
+        if preset_device_ids is None:
+            raise HTTPException(
+                status_code=404, detail=f"Preset '{preset_id}' not found"
+            )
+    else:
+        preset_device_ids = None  # Include all
+
+    # Build steps with parameters
+    steps = []
+    request_template_connections = {}
+    selected_devices = []
+
+    for device in deployment_info.get("devices", []):
+        device_id = device["id"]
+        device_type = device.get("type", "")
+
+        # Filter by preset if specified
+        if preset_device_ids is not None and device_id not in preset_device_ids:
+            continue
+
+        selected_devices.append(device_id)
+
+        # Check if device has targets
+        targets_data = device.get("targets")
+        has_targets = bool(targets_data)
+
+        # Build step info
+        step_info = DeployStepInfo(
+            device_id=device_id,
+            name=device.get("name", device_id),
+            type=device_type,
+            required=device.get("required", True),
+        )
+
+        if has_targets:
+            # Build targets list and per-target parameters
+            targets_list = []
+            params_by_target = {}
+            default_target_id = None
+
+            for target_id, target_data in targets_data.items():
+                is_default = target_data.get("default", False)
+                if is_default:
+                    default_target_id = target_id
+                targets_list.append(
+                    {
+                        "id": target_id,
+                        "name": target_data.get("name", target_id),
+                        "default": is_default,
+                    }
+                )
+
+                target_params = _extract_parameters(
+                    target_data.get("user_inputs", []), lang
+                )
+                params_by_target[target_id] = target_params
+
+            step_info.targets = targets_list
+            step_info.parameters = params_by_target
+
+            # Use default target for template (or first target)
+            tmpl_target = default_target_id or (
+                list(targets_data.keys())[0] if targets_data else None
+            )
+            if tmpl_target:
+                request_template_connections[device_id] = _build_template_connection(
+                    params_by_target.get(tmpl_target, [])
+                )
+            else:
+                request_template_connections[device_id] = {}
+        else:
+            # Simple device — parameters from user_inputs
+            user_inputs = device.get("user_inputs", [])
+            params = _extract_parameters(user_inputs, lang)
+            step_info.parameters = params
+            request_template_connections[device_id] = _build_template_connection(params)
+
+        steps.append(step_info)
+
+    # Build request template
+    request_template = {
+        "solution_id": solution_id,
+        "selected_devices": selected_devices,
+        "device_connections": request_template_connections,
+    }
+    if preset_id:
+        request_template["preset_id"] = preset_id
+    elif presets:
+        request_template["preset_id"] = presets[0]["id"]
+
+    solution_name = solution.name
+    if lang == "zh" and solution.name_zh:
+        solution_name = solution.name_zh
+
+    return DeployInfoResponse(
+        solution_id=solution_id,
+        solution_name=solution_name,
+        presets=presets,
+        steps=steps,
+        request_template=request_template,
+    )
+
+
+def _extract_parameters(user_inputs: list, lang: str) -> List[DeployParameter]:
+    """Convert user_inputs dicts to DeployParameter list."""
+    params = []
+    for inp in user_inputs:
+        desc = inp.get("description", "")
+        if lang == "zh" and inp.get("description_zh"):
+            desc = inp["description_zh"]
+        name = inp.get("name", "")
+        if lang == "zh" and inp.get("name_zh"):
+            name = inp["name_zh"]
+
+        params.append(
+            DeployParameter(
+                key=inp.get("id", ""),
+                type=inp.get("type", "text"),
+                required=inp.get("required", False),
+                default=inp.get("default"),
+                description=desc or name,
+                example=inp.get("placeholder"),
+            )
+        )
+    return params
+
+
+def _build_template_connection(params: List[DeployParameter]) -> dict:
+    """Build a request template connection dict from parameters."""
+    conn = {}
+    for p in params:
+        if p.default:
+            conn[p.key] = p.default
+        elif p.required:
+            hint = p.description or p.key
+            conn[p.key] = f"<REQUIRED: {hint}>"
+        else:
+            # Optional without default — omit from template
+            pass
+    return conn
 
 
 @router.get("/{solution_id}/assets/{path:path}")
