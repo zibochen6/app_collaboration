@@ -142,6 +142,46 @@ class UpdateManager:
                 message=f"Action failed: {str(e)}",
             )
 
+    async def _resolve_local_compose_base(self) -> Optional[list[str]]:
+        """Resolve local compose command base: ['docker','compose'] or ['docker-compose']."""
+        candidates = (
+            (["docker", "compose", "version"], ["docker", "compose"]),
+            (["docker-compose", "--version"], ["docker-compose"]),
+        )
+        for probe, base in candidates:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *probe,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                await proc.communicate()
+                if proc.returncode == 0:
+                    return base
+            except FileNotFoundError:
+                continue
+            except Exception:
+                continue
+        return None
+
+    async def _resolve_remote_compose_base(self, client) -> Optional[str]:
+        """Resolve remote compose command base: 'docker compose' or 'docker-compose'."""
+        candidates = (
+            ("docker compose version", "docker compose"),
+            ("docker-compose --version", "docker-compose"),
+        )
+        for probe, base in candidates:
+            try:
+                _, stdout, _ = await asyncio.to_thread(
+                    client.exec_command, probe, timeout=30
+                )
+                exit_code = stdout.channel.recv_exit_status()
+                if exit_code == 0:
+                    return base
+            except Exception:
+                continue
+        return None
+
     async def _update_local_docker(
         self,
         compose_path: Optional[str],
@@ -155,8 +195,15 @@ class UpdateManager:
             else:
                 cwd = None
 
+            compose_base = await self._resolve_local_compose_base()
+            if not compose_base:
+                return UpdateResponse(
+                    success=False,
+                    message="Docker Compose not found (tried docker compose / docker-compose)",
+                )
+
             # Pull new images
-            pull_cmd = ["docker", "compose"]
+            pull_cmd = compose_base.copy()
             if project_name:
                 pull_cmd.extend(["-p", project_name])
             pull_cmd.append("pull")
@@ -176,7 +223,7 @@ class UpdateManager:
                 )
 
             # Restart with new images
-            up_cmd = ["docker", "compose"]
+            up_cmd = compose_base.copy()
             if project_name:
                 up_cmd.extend(["-p", project_name])
             up_cmd.extend(["up", "-d", "--remove-orphans"])
@@ -233,8 +280,15 @@ class UpdateManager:
             )
 
             try:
+                compose_base = await self._resolve_remote_compose_base(client)
+                if not compose_base:
+                    return UpdateResponse(
+                        success=False,
+                        message="Docker Compose not found on remote device (tried docker compose / docker-compose)",
+                    )
+
                 # Pull new images
-                pull_cmd = f"cd {compose_path} && docker compose -p {project_name} pull"
+                pull_cmd = f"cd {compose_path} && {compose_base} -p {project_name} pull"
                 stdin, stdout, stderr = await asyncio.to_thread(
                     client.exec_command, pull_cmd, timeout=600
                 )
@@ -248,7 +302,7 @@ class UpdateManager:
                     )
 
                 # Restart with new images
-                up_cmd = f"cd {compose_path} && docker compose -p {project_name} up -d --remove-orphans"
+                up_cmd = f"cd {compose_path} && {compose_base} -p {project_name} up -d --remove-orphans"
                 stdin, stdout, stderr = await asyncio.to_thread(
                     client.exec_command, up_cmd, timeout=300
                 )
@@ -305,7 +359,14 @@ class UpdateManager:
     ) -> UpdateResponse:
         """Perform container action on local deployment"""
         try:
-            cmd = ["docker", "compose"]
+            compose_base = await self._resolve_local_compose_base()
+            if not compose_base:
+                return UpdateResponse(
+                    success=False,
+                    message="Docker Compose not found (tried docker compose / docker-compose)",
+                )
+
+            cmd = compose_base.copy()
             if project_name:
                 cmd.extend(["-p", project_name])
 
@@ -375,6 +436,13 @@ class UpdateManager:
             )
 
             try:
+                compose_base = await self._resolve_remote_compose_base(client)
+                if not compose_base:
+                    return UpdateResponse(
+                        success=False,
+                        message="Docker Compose not found on remote device (tried docker compose / docker-compose)",
+                    )
+
                 if action == "start":
                     compose_cmd = "up -d"
                 elif action == "stop":
@@ -387,7 +455,7 @@ class UpdateManager:
                         message=f"Unknown action: {action}",
                     )
 
-                cmd = f"cd {compose_path} && docker compose -p {project_name} {compose_cmd}"
+                cmd = f"cd {compose_path} && {compose_base} -p {project_name} {compose_cmd}"
                 stdin, stdout, stderr = await asyncio.to_thread(
                     client.exec_command, cmd, timeout=300
                 )

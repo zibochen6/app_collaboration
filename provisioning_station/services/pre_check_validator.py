@@ -141,6 +141,7 @@ class PreCheckValidator:
     async def _validate_docker_compose_version(self, check: PreCheck) -> CheckResult:
         """Check Docker Compose version"""
         try:
+            stdout = None
             process = await asyncio.create_subprocess_exec(
                 "docker",
                 "compose",
@@ -150,11 +151,21 @@ class PreCheckValidator:
             )
             stdout, _ = await process.communicate()
 
+            # Fallback to standalone v1 command
             if process.returncode != 0:
+                process = await asyncio.create_subprocess_exec(
+                    "docker-compose",
+                    "--version",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, _ = await process.communicate()
+
+            if process.returncode != 0 or stdout is None:
                 return CheckResult(
                     type=check.type,
                     passed=False,
-                    message="Docker Compose is not available",
+                    message="Docker Compose is not available (tried docker compose / docker-compose)",
                 )
 
             # Parse version: Docker Compose version v2.20.2

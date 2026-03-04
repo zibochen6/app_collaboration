@@ -5,6 +5,7 @@ setlocal enabledelayedexpansion
 :: Builds frontend then runs backend with --reload
 
 set BACKEND_PORT=3260
+set BACKEND_HOST=127.0.0.1
 set PROJECT_DIR=%~dp0
 
 echo ==========================================
@@ -77,6 +78,6 @@ echo   Press Ctrl+C to stop
 echo ==========================================
 echo.
 
-uv run uvicorn provisioning_station.main:app --host 0.0.0.0 --port %BACKEND_PORT% --reload --loop asyncio
+uv run uvicorn provisioning_station.main:app --host %BACKEND_HOST% --port %BACKEND_PORT% --reload --loop asyncio
 
 endlocal

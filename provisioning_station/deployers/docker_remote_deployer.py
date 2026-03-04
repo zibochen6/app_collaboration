@@ -264,12 +264,30 @@ class DockerRemoteDeployer(SSHMixin, BaseDeployer):
                     progress_callback, "prepare", 100, f"Directory ready: {remote_dir}"
                 )
 
-                # Check for existing containers that would conflict
                 compose_path = config.get_asset_path(docker_config.compose_file)
                 auto_replace = connection.get("auto_replace_containers", False)
                 project_name = docker_config.options.get("project_name", config.id)
                 project_name_escaped = shlex.quote(project_name)
 
+                # Before actions
+                ssh_executor = SSHActionExecutor(client, password)
+                if not await self._execute_actions(
+                    "before", config, connection, progress_callback, ssh_executor
+                ):
+                    return False
+
+                # Resolve compose command across v2 plugin and v1 standalone.
+                compose_command = await self._resolve_compose_command(client, docker_sudo)
+                if not compose_command:
+                    await self._report_progress(
+                        progress_callback,
+                        "check_docker",
+                        0,
+                        "Docker Compose not found (tried: docker compose / docker-compose)",
+                    )
+                    return False
+
+                # Check for existing containers that would conflict
                 await self._check_existing_remote_containers(
                     client,
                     compose_path,
@@ -278,14 +296,8 @@ class DockerRemoteDeployer(SSHMixin, BaseDeployer):
                     docker_sudo,
                     auto_replace,
                     progress_callback,
+                    compose_command,
                 )
-
-                # Before actions
-                ssh_executor = SSHActionExecutor(client, password)
-                if not await self._execute_actions(
-                    "before", config, connection, progress_callback, ssh_executor
-                ):
-                    return False
 
                 # Step 3: Upload compose files
                 await self._report_progress(
@@ -318,7 +330,7 @@ class DockerRemoteDeployer(SSHMixin, BaseDeployer):
                 exit_code, stdout, stderr = await asyncio.to_thread(
                     self._exec_with_timeout,
                     client,
-                    f"cd {remote_dir_escaped} && {docker_sudo}docker compose pull --quiet",
+                    f"cd {remote_dir_escaped} && {compose_command} pull --quiet",
                     pull_timeout,
                 )
 
@@ -360,7 +372,7 @@ class DockerRemoteDeployer(SSHMixin, BaseDeployer):
                 env_vars = " ".join(env_items)
                 env_prefix = f"env {env_vars} " if env_vars else ""
 
-                compose_cmd = f"cd {remote_dir_escaped} && {env_prefix}{docker_sudo}docker compose -p {project_name_escaped} up -d"
+                compose_cmd = f"cd {remote_dir_escaped} && {env_prefix}{compose_command} -p {project_name_escaped} up -d"
 
                 if docker_config.options.get("remove_orphans"):
                     compose_cmd += " --remove-orphans"
@@ -709,6 +721,7 @@ class DockerRemoteDeployer(SSHMixin, BaseDeployer):
         docker_sudo: str,
         auto_replace: bool,
         progress_callback=None,
+        compose_command: Optional[str] = None,
     ) -> None:
         """Check for existing containers on remote that would conflict.
 
@@ -747,10 +760,11 @@ class DockerRemoteDeployer(SSHMixin, BaseDeployer):
                 "Stopping existing containers...",
             )
 
+            effective_compose_cmd = compose_command or f"{docker_sudo}docker compose"
             # Run docker compose down for the project
             down_cmd = (
                 f"cd {remote_dir_escaped} && "
-                f"{docker_sudo}docker compose -p {project_name_escaped} down --remove-orphans 2>/dev/null; "
+                f"{effective_compose_cmd} -p {project_name_escaped} down --remove-orphans 2>/dev/null; "
             )
             # Also force remove by container name (cross-project conflicts)
             rm_names = " ".join(shlex.quote(n) for n in container_names)
@@ -772,6 +786,31 @@ class DockerRemoteDeployer(SSHMixin, BaseDeployer):
                 can_auto_fix=True,
                 fix_action="replace_containers",
             )
+
+    async def _resolve_compose_command(self, client, docker_sudo: str) -> Optional[str]:
+        """Resolve docker compose command (v2 plugin or v1 standalone)."""
+        probes = (
+            ("docker compose version", "docker compose"),
+            ("docker-compose --version", "docker-compose"),
+        )
+
+        # Prefer probing with docker_sudo first because deploy commands may require it.
+        for probe_cmd, resolved_cmd in probes:
+            exit_code, _, _ = await asyncio.to_thread(
+                self._exec_with_timeout, client, f"{docker_sudo}{probe_cmd}", 20
+            )
+            if exit_code == 0:
+                return f"{docker_sudo}{resolved_cmd}"
+
+        # Fallback: probe without sudo, still keep docker_sudo for runtime operations.
+        for probe_cmd, resolved_cmd in probes:
+            exit_code, _, _ = await asyncio.to_thread(
+                self._exec_with_timeout, client, probe_cmd, 20
+            )
+            if exit_code == 0:
+                return f"{docker_sudo}{resolved_cmd}" if docker_sudo else resolved_cmd
+
+        return None
 
     async def _check_remote_service_health(
         self,

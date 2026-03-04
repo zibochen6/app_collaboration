@@ -198,15 +198,53 @@ app.include_router(serial_camera.router)
 app.include_router(api_keys.router)
 
 # Serve static frontend files
-_frontend_dir = settings.frontend_dir or (
-    Path(__file__).parent.parent / "frontend" / "dist"
+_default_frontend_dir = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+_configured_frontend_dir: Optional[Path] = None
+if settings.frontend_dir:
+    # Resolve relative frontend dir against project base for stable behavior.
+    _configured_frontend_dir = settings.frontend_dir
+    if not _configured_frontend_dir.is_absolute():
+        _configured_frontend_dir = settings.base_dir / _configured_frontend_dir
+    _configured_frontend_dir = _configured_frontend_dir.resolve()
+
+_frontend_candidates = []
+if _configured_frontend_dir:
+    _frontend_candidates.append(_configured_frontend_dir)
+if _default_frontend_dir not in _frontend_candidates:
+    _frontend_candidates.append(_default_frontend_dir)
+
+_frontend_dir = next(
+    (
+        path
+        for path in _frontend_candidates
+        if path.exists() and (path / "index.html").exists()
+    ),
+    None,
 )
-if _frontend_dir.exists():
-    app.mount("/assets", StaticFiles(directory=_frontend_dir / "assets"), name="assets")
+
+if _configured_frontend_dir and _frontend_dir != _configured_frontend_dir:
+    logger.warning(
+        "Configured frontend dir is invalid or incomplete: %s. "
+        "Falling back to: %s",
+        _configured_frontend_dir,
+        _frontend_dir or _default_frontend_dir,
+    )
+
+if _frontend_dir:
+    _assets_dir = _frontend_dir / "assets"
+    if _assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=_assets_dir), name="assets")
+    else:
+        logger.warning("Frontend assets directory missing: %s", _assets_dir)
 
     @app.get("/")
     async def serve_frontend():
         return FileResponse(_frontend_dir / "index.html")
+else:
+    logger.warning(
+        "Frontend dist not found; UI route disabled. Checked: %s",
+        [str(path) for path in _frontend_candidates],
+    )
 
 
 @app.get("/api/health")

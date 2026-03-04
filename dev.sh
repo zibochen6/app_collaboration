@@ -7,6 +7,7 @@ set -e
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_PORT=3260
+BACKEND_HOST=127.0.0.1
 
 echo "=========================================="
 echo "  Provisioning Station - Dev Mode"
@@ -69,7 +70,7 @@ npm run build --silent 2>/dev/null || npm run build
 # Start backend with hot reload
 cd "$PROJECT_DIR"
 echo -e "${GREEN}Starting backend on http://localhost:${BACKEND_PORT}${NC}"
-uv run uvicorn provisioning_station.main:app --host 0.0.0.0 --port $BACKEND_PORT --reload &
+uv run uvicorn provisioning_station.main:app --host $BACKEND_HOST --port $BACKEND_PORT --reload &
 BACKEND_PID=$!
 
 sleep 2

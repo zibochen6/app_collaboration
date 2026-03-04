@@ -247,7 +247,7 @@ class StreamProxy:
 
         # On Windows, SelectorEventLoop doesn't support subprocess - use sync Popen instead
         # ProactorEventLoop supports subprocess but uvicorn uses SelectorEventLoop by default
-        is_windows = platform.system() == "win32"
+        is_windows = platform.system().lower() == "windows"
         has_selector = "Selector" in loop_name
         use_sync = is_windows and has_selector
         logger.debug(

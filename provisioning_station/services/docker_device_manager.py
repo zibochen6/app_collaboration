@@ -663,7 +663,14 @@ class DockerDeviceManager:
         """Run a local docker compose command."""
         import os
 
-        cmd = ["docker", "compose", "-f", compose_file]
+        compose_base = await self._resolve_local_compose_base()
+        if not compose_base:
+            return {
+                "success": False,
+                "error": "Docker Compose not found (tried docker compose / docker-compose)",
+            }
+
+        cmd = compose_base + ["-f", compose_file]
         if project_name:
             cmd.extend(["-p", project_name])
         cmd.extend(args)
@@ -692,6 +699,46 @@ class DockerDeviceManager:
             }
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    async def _resolve_local_compose_base(self) -> Optional[List[str]]:
+        """Resolve local compose command base."""
+        probes = (
+            (["docker", "compose", "version"], ["docker", "compose"]),
+            (["docker-compose", "--version"], ["docker-compose"]),
+        )
+        for probe, base in probes:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *probe,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                await proc.communicate()
+                if proc.returncode == 0:
+                    return base
+            except FileNotFoundError:
+                continue
+            except Exception:
+                continue
+        return None
+
+    def _resolve_remote_compose_base(self, client) -> str:
+        """Resolve remote compose command base."""
+        probes = (
+            ("docker compose version", "docker compose"),
+            ("docker-compose --version", "docker-compose"),
+        )
+        for probe, base in probes:
+            try:
+                _, stdout, _ = client.exec_command(probe, timeout=20)
+                exit_code = stdout.channel.recv_exit_status()
+                if exit_code == 0:
+                    return base
+            except Exception:
+                continue
+        raise RuntimeError(
+            "Docker Compose not found on remote device (tried docker compose / docker-compose)"
+        )
 
     # ============================================
     # Remote Docker Management (SSH)
@@ -875,6 +922,7 @@ class DockerDeviceManager:
         try:
             client = self._get_ssh_client(connection)
             try:
+                compose_base = self._resolve_remote_compose_base(client)
                 # Pull new images
                 compose_dir = (
                     request.compose_path.rsplit("/", 1)[0]
@@ -887,14 +935,14 @@ class DockerDeviceManager:
 
                 pull_output = self._exec_command(
                     client,
-                    f"cd {compose_dir} && docker compose {project_flag} pull",
+                    f"cd {compose_dir} && {compose_base} {project_flag} pull",
                     timeout=120,
                 )
 
                 # Recreate containers
                 up_output = self._exec_command(
                     client,
-                    f"cd {compose_dir} && docker compose {project_flag} up -d",
+                    f"cd {compose_dir} && {compose_base} {project_flag} up -d",
                     timeout=60,
                 )
 
@@ -1188,7 +1236,8 @@ class DockerDeviceManager:
 
                 client = self._get_ssh_client(connection)
                 try:
-                    cmd = f"cd {remote_base} && {env_str} docker compose -p {project_name} -f {remote_compose} up -d"
+                    compose_base = self._resolve_remote_compose_base(client)
+                    cmd = f"cd {remote_base} && {env_str} {compose_base} -p {project_name} -f {remote_compose} up -d"
                     output = self._exec_command(client, cmd, timeout=60)
 
                     # Update manifest

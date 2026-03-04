@@ -150,10 +150,15 @@ actions:
       run: |
         set -e
 
-        if docker compose version >/dev/null 2>&1; then
+        compose_ready() {
+          docker compose version >/dev/null 2>&1 || docker-compose --version >/dev/null 2>&1
+        }
+
+        if compose_ready; then
           exit 0
         fi
 
+        # If docker-compose binary already exists, try exposing it as a CLI plugin.
         if command -v docker-compose >/dev/null 2>&1; then
           COMPOSE_BIN="$(command -v docker-compose)"
           for d in \
@@ -166,15 +171,32 @@ actions:
           done
         fi
 
-        if ! docker compose version >/dev/null 2>&1; then
-          if command -v apt-get >/dev/null 2>&1; then
-            apt-get update
-            apt-get install -y docker-compose-plugin
-          fi
+        # Try distro packages with multiple known names across Ubuntu / Docker repos.
+        if ! compose_ready && command -v apt-get >/dev/null 2>&1; then
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          for pkg in docker-compose-plugin docker-compose-v2 docker-compose; do
+            if apt-get install -y "$pkg"; then
+              break
+            fi
+          done
         fi
 
-        docker compose version >/dev/null 2>&1 || {
-          echo "docker compose is still unavailable after compatibility setup"
+        # Re-link after package install if docker-compose command exists.
+        if ! compose_ready && command -v docker-compose >/dev/null 2>&1; then
+          COMPOSE_BIN="$(command -v docker-compose)"
+          for d in \
+            /usr/local/lib/docker/cli-plugins \
+            /usr/lib/docker/cli-plugins \
+            /usr/libexec/docker/cli-plugins
+          do
+            mkdir -p "$d"
+            ln -sf "$COMPOSE_BIN" "$d/docker-compose" || true
+          done
+          fi
+
+        compose_ready || {
+          echo "Docker Compose is unavailable. Need either 'docker compose' (v2 plugin) or 'docker-compose' (standalone)."
           exit 1
         }
 
