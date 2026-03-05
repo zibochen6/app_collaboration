@@ -49,6 +49,17 @@ pyinstaller/dist/
 # Playwright CLI sessions
 .playwright-cli/
 
+# Runtime data (API keys, deployment history)
+data/
+
+# Generated / temporary files
+current.yml
+intro.yml
+
+# Root-level package.json (real one is in frontend/)
+/package.json
+/package-lock.json
+
 # Rust/Tauri
 src-tauri/target/
 src-tauri/gen/

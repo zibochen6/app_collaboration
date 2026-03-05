@@ -1,1 +1,0 @@
-{"default":{"identifier":"default","description":"Default capabilities for the app","remote":{"urls":["http://127.0.0.1:*","http://localhost:*"]},"local":true,"windows":["main"],"permissions":["core:default","shell:allow-spawn","shell:allow-execute","shell:allow-kill","process:default","updater:default","updater:allow-check","updater:allow-download-and-install"]}}
