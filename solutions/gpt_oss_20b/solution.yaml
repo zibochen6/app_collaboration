@@ -1,11 +1,11 @@
 version: "1.0"
 id: got_oss_20b
-name: GOT OSS 20B on Jetson
-name_zh: GOT OSS 20B on Jetson
+name: GPT OSS 20B on Jetson
+name_zh: GPT OSS 20B on Jetson
 
 intro:
-  summary: One-click SSH deployment of GOT OSS 20B on NVIDIA Jetson with a prebuilt Docker image.
-  summary_zh: One-click SSH deployment of GOT OSS 20B on NVIDIA Jetson, with automatic web service startup.
+  summary: One-click SSH deployment of GPT OSS 20B on NVIDIA Jetson with a prebuilt Docker image.
+  summary_zh: One-click SSH deployment of GPT OSS 20B on NVIDIA Jetson, with automatic web service startup.
   description_file: description.md
   description_file_zh: description_zh.md
   cover_image: gallery/gpt-oss.gif
@@ -22,10 +22,10 @@ intro:
 
   presets:
     - id: jetson_got_oss
-      name: Jetson GOT OSS 20B Service
-      name_zh: Jetson GOT OSS 20B Service
-      description: Deploy GOT OSS 20B inference service to Jetson with one click.
-      description_zh: Deploy GOT OSS 20B inference service to Jetson with one click.
+      name: Jetson GPT OSS 20B Service
+      name_zh: Jetson GPT OSS 20B Service
+      description: Deploy GPT OSS 20B inference service to Jetson with one click.
+      description_zh: Deploy GPT OSS 20B inference service to Jetson with one click.
       device_groups:
         - id: edge_device
           name: Edge Device

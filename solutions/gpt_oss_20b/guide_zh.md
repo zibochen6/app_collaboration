@@ -1,14 +1,14 @@
-## Preset: Jetson GOT OSS 20B Service {#jetson_got_oss}
+## Preset: Jetson GPT OSS 20B Service {#jetson_got_oss}
 
-Deploy GOT OSS 20B to your Jetson device with one click from this platform.
+Deploy GPT OSS 20B to your Jetson device with one click from this platform.
 
 | Device | Purpose |
 |--------|---------|
-| NVIDIA Jetson (reComputer) | Runs GOT OSS 20B in Docker |
+| NVIDIA Jetson (reComputer) | Runs GPT OSS 20B in Docker |
 
-## Step 1: Deploy GOT OSS 20B Service {#deploy_got_oss type=docker_deploy required=true config=devices/jetson.yaml}
+## Step 1: Deploy GPT OSS 20B Service {#deploy_got_oss type=docker_deploy required=true config=devices/jetson.yaml}
 
-Deploy the containerized GOT OSS 20B runtime to your Jetson over SSH.
+Deploy the containerized GPT OSS 20B runtime to your Jetson over SSH.
 
 ### Target: Remote Deployment (Jetson) {#jetson_remote type=remote config=devices/jetson.yaml default=true}
 
@@ -22,7 +22,7 @@ Deploy to your Jetson over SSH with one click.
 
 ### Deployment Complete
 
-1. The `got_oss_20b` container is running on your Jetson.
+1. The GPT OSS 20B container is running on your Jetson.
 2. `llama-server` is started inside the container.
 3. The service endpoint is available at `http://<jetson-ip>:8080`.
 4. Readiness endpoint is available at `http://<jetson-ip>:8080/v1/models`.
@@ -34,7 +34,7 @@ Deploy to your Jetson over SSH with one click.
 | SSH connection failed | Verify Jetson IP, username, password, and SSH service status |
 | Docker runtime check failed | Ensure Docker is installed and NVIDIA runtime is available |
 | Docker Compose unavailable | Ensure `docker compose` or `docker-compose` is installed |
-| Service start failed | Inspect logs on Jetson: `docker logs got_oss_20b` |
+| Service start failed | Inspect logs on Jetson: `docker compose logs --tail=200` |
 | `503 {"message":"Loading model"}` on `/v1/models` | Model is still warming up; first run can take several minutes |
 | Out-of-memory at startup | Reduce settings, for example set `Llama NGL=16` and `Llama Context=512` |
 
@@ -63,10 +63,10 @@ Use this step to open the Jetson service URL directly in a new browser tab.
 
 # Deployment Complete
 
-GOT OSS 20B runtime has been deployed successfully on your Jetson.
+GPT OSS 20B runtime has been deployed successfully on your Jetson.
 
 ## Validation Checklist
 
 1. Step 1 deployment status shows success.
-2. `got_oss_20b` container stays in running state.
+2. The GPT OSS 20B container stays in running state.
 3. Clicking **Connect** in Step 2 opens `http://<jetson-ip>:8080`.

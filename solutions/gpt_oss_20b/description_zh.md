@@ -1,6 +1,6 @@
-# GOT OSS 20B on Jetson
+# GPT OSS 20B Jetson Solution
 
-This solution deploys a prebuilt GOT OSS 20B container to an NVIDIA Jetson device over SSH.
+This solution deploys a prebuilt GPT OSS 20B container to an NVIDIA Jetson device over SSH.
 
 After deployment, the container starts `llama-server` and exposes an HTTP service on port `8080`.
 
