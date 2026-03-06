@@ -18,6 +18,31 @@ import { getDeviceById, resolveTemplate, loadScript } from './utils.js';
 import { updateSectionUI, expandNextSection } from './ui-updates.js';
 
 // ============================================
+// Preview Helpers
+// ============================================
+
+function collectPreviewInputs(deviceId, preview) {
+  const inputs = {};
+  const userInputs = preview.user_inputs || [];
+  userInputs.forEach(input => {
+    const el = document.getElementById(`preview-input-${deviceId}-${input.id}`);
+    if (el) {
+      inputs[input.id] = el.value;
+    }
+  });
+  return inputs;
+}
+
+function normalizeExternalUrl(url) {
+  const value = String(url || '').trim();
+  if (!value) return '';
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+  return `http://${value}`;
+}
+
+// ============================================
 // Preview Initialization
 // ============================================
 
@@ -28,11 +53,13 @@ export async function initPreviewWindow(deviceId) {
   const device = getDeviceById(deviceId);
   if (!device || device.type !== 'preview') return;
 
+  const preview = device.preview || {};
+  if (preview.video?.type === 'external_url') return;
+
   const container = document.getElementById(`preview-container-${deviceId}`);
   if (!container) return;
 
   const currentSolution = getCurrentSolution();
-  const preview = device.preview || {};
   const state = getDeviceState(deviceId);
 
   // Create preview window
@@ -87,7 +114,7 @@ export async function initPreviewWindow(deviceId) {
 /**
  * Start preview connection
  */
-export async function startPreview(deviceId, previewWindow) {
+export async function startPreview(deviceId, previewWindow = null) {
   const device = getDeviceById(deviceId);
   if (!device) return;
 
@@ -95,14 +122,7 @@ export async function startPreview(deviceId, previewWindow) {
   const state = getDeviceState(deviceId);
 
   // Collect inputs from the form
-  const inputs = {};
-  const userInputs = preview.user_inputs || [];
-  userInputs.forEach(input => {
-    const el = document.getElementById(`preview-input-${deviceId}-${input.id}`);
-    if (el) {
-      inputs[input.id] = el.value;
-    }
-  });
+  const inputs = collectPreviewInputs(deviceId, preview);
 
   // Store inputs in state
   state.userInputs = { ...state.userInputs, ...inputs };
@@ -115,6 +135,36 @@ export async function startPreview(deviceId, previewWindow) {
     options.rtspUrl = resolveTemplate(preview.video.rtsp_url_template, inputs);
   } else if (inputs.rtsp_url) {
     options.rtspUrl = inputs.rtsp_url;
+  }
+
+  if (preview.video?.type === 'external_url') {
+    try {
+      const targetUrl = normalizeExternalUrl(options.rtspUrl);
+      if (!targetUrl) {
+        throw new Error('Jetson host is required');
+      }
+
+      const parsedUrl = new URL(targetUrl);
+      if (!parsedUrl.hostname || parsedUrl.hostname.includes('{')) {
+        throw new Error('Invalid host or URL');
+      }
+
+      const opened = window.open(parsedUrl.toString(), '_blank');
+      if (!opened) {
+        throw new Error('Popup blocked by browser');
+      }
+
+      toast.success(t('preview.connected'));
+    } catch (error) {
+      console.error('Preview URL open failed:', error);
+      toast.error(t('preview.connectionFailed') + ': ' + error.message);
+    }
+    return;
+  }
+
+  if (!previewWindow) {
+    toast.error(t('preview.connectionFailed') + ': Preview window is not initialized');
+    return;
   }
 
   // Resolve MQTT config
@@ -208,6 +258,11 @@ export function getPreviewButtonContent(state) {
 export async function handlePreviewButtonClick(deviceId) {
   const device = getDeviceById(deviceId);
   if (!device || device.type !== 'preview') return;
+
+  if (device.preview?.video?.type === 'external_url') {
+    await startPreview(deviceId);
+    return;
+  }
 
   const state = getDeviceState(deviceId);
   const previewWindow = getPreviewInstance(deviceId);

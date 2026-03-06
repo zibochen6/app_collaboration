@@ -123,6 +123,11 @@
     @apply w-full h-48 object-cover bg-gray-100;
   }
 
+  .solution-card-image.solution-card-image-gif {
+    @apply object-contain;
+    background-color: #111827;
+  }
+
   .solution-card-content {
     @apply p-5 flex flex-col flex-1;
   }
@@ -610,6 +615,11 @@
 
   .hero-carousel-image {
     @apply w-full h-full object-cover;
+  }
+
+  .hero-carousel-image.hero-carousel-image-contain {
+    @apply object-contain;
+    background-color: #111827;
   }
 
   .hero-carousel-prev,

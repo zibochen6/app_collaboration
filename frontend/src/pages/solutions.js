@@ -91,6 +91,8 @@ function renderSolutionCard(solution) {
   const summary = getLocalizedField(solution, 'summary');
   // Use getAssetUrl to handle Tauri mode (converts relative /api/... paths to full URLs)
   const coverImage = solution.cover_image ? getAssetUrl(solution.id, solution.cover_image) : PLACEHOLDER_IMAGE;
+  const isGifCover = /\.gif($|\?)/i.test(coverImage || '');
+  const imageClass = `solution-card-image${isGifCover ? ' solution-card-image-gif' : ''}`;
 
   const categoryLabel = t('management.categories.' + (solution.category || 'general'));
 
@@ -98,7 +100,7 @@ function renderSolutionCard(solution) {
     <div class="solution-card" data-solution-id="${solution.id}">
       <div class="solution-card-image-wrapper">
         <img
-          class="solution-card-image"
+          class="${imageClass}"
           src="${coverImage}"
           alt="${escapeHtml(name)}"
           onerror="if(!this.dataset.err){this.dataset.err='1';this.src='${PLACEHOLDER_IMAGE}';}"

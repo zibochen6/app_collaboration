@@ -509,7 +509,7 @@ export function renderDeploySection(device, stepNumber) {
       <!-- Section Content (collapsible) -->
       <div class="deploy-section-content ${state.sectionExpanded ? 'expanded' : ''}" id="content-${device.id}">
         ${isManual ? renderManualSectionContent(device, state, sectionDescription) :
-          isPreview ? renderPreviewSectionContent(device, sectionDescription) :
+          isPreview ? renderPreviewSectionContent(device, state, sectionDescription) :
           isSerialCamera ? renderSerialCameraSectionContent(device, state, sectionDescription) :
           hasTargets ? renderTargetSectionContent(device, state) :
           renderAutoSectionContent(device, state, sectionDescription, isScript)}
@@ -783,13 +783,53 @@ function renderManualSectionContent(device, state, sectionDescription) {
 
 /**
  * Render preview section content
- * Structure: description -> preview inputs -> preview container
+ * Structure: description -> preview inputs -> preview container -> action
  */
-function renderPreviewSectionContent(device, sectionDescription) {
+function renderPreviewSectionContent(device, state, sectionDescription) {
+  const isExternalUrl = device.preview?.video?.type === 'external_url';
   return `
     ${renderDescriptionSection(sectionDescription)}
     ${renderPreviewInputs(device)}
-    <div class="preview-container-wrapper" id="preview-container-${device.id}"></div>
+    ${isExternalUrl ? '' : `<div class="preview-container-wrapper" id="preview-container-${device.id}"></div>`}
+    ${renderPreviewActionArea(device, state)}
+  `;
+}
+
+function getPreviewActionButtonContent(state) {
+  if (state.previewConnected) {
+    return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="6" y="4" width="4" height="16"/>
+      <rect x="14" y="4" width="4" height="16"/>
+    </svg> ${t('preview.actions.disconnect')}`;
+  }
+  if (state.deploymentStatus === 'completed') {
+    return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> ${t('deploy.status.completed')}`;
+  }
+  return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <polygon points="5 3 19 12 5 21 5 3"/>
+  </svg> ${t('preview.actions.connect')}`;
+}
+
+function renderPreviewActionArea(device, state) {
+  return `
+    <div class="deploy-action-area">
+      <div class="deploy-action-title">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="3" width="20" height="14" rx="2"/>
+          <polygon points="10 8 16 11 10 14 10 8"/>
+          <line x1="8" y1="21" x2="16" y2="21"/>
+          <line x1="12" y1="17" x2="12" y2="21"/>
+        </svg>
+        ${t('preview.title')}
+      </div>
+      <p class="deploy-action-desc">${t('preview.description')}</p>
+      <button class="deploy-action-btn ${getButtonClass(state)}"
+              id="deploy-btn-${device.id}"
+              data-device-id="${device.id}"
+              ${state.deploymentStatus === 'running' ? 'disabled' : ''}>
+        ${getPreviewActionButtonContent(state)}
+      </button>
+    </div>
   `;
 }
 

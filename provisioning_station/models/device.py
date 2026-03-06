@@ -384,7 +384,7 @@ class UserInputConfig(BaseModel):
 class PreviewVideoConfig(BaseModel):
     """Video stream configuration for preview"""
 
-    type: str = "rtsp_proxy"  # rtsp_proxy | hls | mjpeg
+    type: str = "rtsp_proxy"  # rtsp_proxy | hls | mjpeg | external_url
     rtsp_url_template: Optional[str] = None
     hls_url_template: Optional[str] = None
 

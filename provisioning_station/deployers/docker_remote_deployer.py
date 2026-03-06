@@ -321,40 +321,71 @@ class DockerRemoteDeployer(SSHMixin, BaseDeployer):
                 )
 
                 # Step 4: Docker compose pull
-                # Use --quiet to suppress progress bars that flood SSH
-                # channel buffer and cause deadlocks for large images.
-                # Use a longer timeout (30 min) for multi-GB image pulls.
-                await self._report_progress(
-                    progress_callback, "pull_images", 0, "Pulling images..."
+                # Pull only when images are missing on remote to avoid blocking
+                # deployments in offline / unstable networks when cache exists.
+                compose_images = self._get_compose_images(compose_path)
+                missing_images = await self._check_remote_images_exist(
+                    client, compose_images, docker_sudo
                 )
 
-                pull_timeout = max(ssh_config.command_timeout, 1800)
-                exit_code, stdout, stderr = await asyncio.to_thread(
-                    self._exec_with_timeout,
-                    client,
-                    f"cd {remote_dir_escaped} && {compose_command} pull --quiet",
-                    pull_timeout,
-                )
-
-                if exit_code != 0:
-                    # Filter out the obsolete "version" warning from error message
-                    error_lines = [
-                        line
-                        for line in stderr.strip().splitlines()
-                        if "the attribute `version` is obsolete" not in line
-                    ]
-                    error_msg = "\n".join(error_lines).strip() or stderr.strip()
+                if not missing_images:
+                    await self._report_progress(
+                        progress_callback,
+                        "pull_images",
+                        100,
+                        "All images already exist locally, skipping pull",
+                    )
+                else:
                     await self._report_progress(
                         progress_callback,
                         "pull_images",
                         0,
-                        f"Pull failed: {error_msg[:300]}",
+                        f"Pulling missing images ({len(missing_images)})...",
                     )
-                    return False
 
-                await self._report_progress(
-                    progress_callback, "pull_images", 100, "Images pulled"
-                )
+                    # Use --quiet to suppress progress bars that flood SSH
+                    # channel buffer and cause deadlocks for large images.
+                    # Use a longer timeout (30 min) for multi-GB image pulls.
+                    pull_timeout = max(ssh_config.command_timeout, 1800)
+                    exit_code, stdout, stderr = await asyncio.to_thread(
+                        self._exec_with_timeout,
+                        client,
+                        f"cd {remote_dir_escaped} && {compose_command} pull --quiet",
+                        pull_timeout,
+                    )
+
+                    if exit_code != 0:
+                        # Re-check cache: if all images are now present, continue.
+                        still_missing = await self._check_remote_images_exist(
+                            client, compose_images, docker_sudo
+                        )
+                        if still_missing:
+                            # Filter out obsolete compose version warning.
+                            error_lines = [
+                                line
+                                for line in stderr.strip().splitlines()
+                                if "the attribute `version` is obsolete" not in line
+                            ]
+                            error_msg = "\n".join(error_lines).strip() or stderr.strip()
+                            missing_msg = ", ".join(still_missing)
+                            await self._report_progress(
+                                progress_callback,
+                                "pull_images",
+                                0,
+                                f"Pull failed: {error_msg[:220]} | Missing images: {missing_msg[:220]}",
+                            )
+                            return False
+
+                        await self._report_progress(
+                            progress_callback,
+                            "pull_images",
+                            100,
+                            "Pull command failed, but all required images already exist locally. Continue...",
+                        )
+                    else:
+                        await self._report_progress(
+                            progress_callback, "pull_images", 100, "Images pulled"
+                        )
 
                 # Step 5: Docker compose up
                 await self._report_progress(
@@ -408,11 +439,16 @@ class DockerRemoteDeployer(SSHMixin, BaseDeployer):
                     all_healthy = True
                     for service in docker_config.services:
                         if service.health_check_endpoint:
+                            health_timeout = (
+                                service.health_check_timeout
+                                if service.health_check_timeout
+                                else 90
+                            )
                             healthy = await self._check_remote_service_health(
                                 host,
                                 service.port,
                                 service.health_check_endpoint,
-                                timeout=90,  # Increased from 30s for slower services
+                                timeout=health_timeout,
                                 progress_callback=progress_callback,
                             )
                             if not healthy:
@@ -713,6 +749,45 @@ class DockerRemoteDeployer(SSHMixin, BaseDeployer):
         except Exception as e:
             logger.debug(f"Failed to parse compose file for container names: {e}")
             return []
+
+    def _get_compose_images(self, compose_file: str) -> List[str]:
+        """Extract image names from a local compose file."""
+        try:
+            with open(compose_file, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+            if not data or "services" not in data:
+                return []
+
+            images: List[str] = []
+            for service_config in data.get("services", {}).values():
+                image = (
+                    service_config.get("image")
+                    if isinstance(service_config, dict)
+                    else None
+                )
+                if image and isinstance(image, str) and image not in images:
+                    images.append(image)
+            return images
+        except Exception as e:
+            logger.debug(f"Failed to parse compose file for images: {e}")
+            return []
+
+    async def _check_remote_images_exist(
+        self, client, images: List[str], docker_sudo: str
+    ) -> List[str]:
+        """Return list of images that are missing on the remote device."""
+        if not images:
+            return []
+
+        missing: List[str] = []
+        for image in images:
+            inspect_cmd = f"{docker_sudo}docker image inspect {shlex.quote(image)} >/dev/null 2>&1"
+            exit_code, _, _ = await asyncio.to_thread(
+                self._exec_with_timeout, client, inspect_cmd, 20
+            )
+            if exit_code != 0:
+                missing.append(image)
+        return missing
 
     async def _check_existing_remote_containers(
         self,

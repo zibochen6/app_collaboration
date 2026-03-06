@@ -251,19 +251,51 @@ function renderGalleryItem(solutionId, item, index) {
   `;
 }
 
+function isGifSource(src) {
+  return /\.gif($|\?)/i.test(String(src || '').trim());
+}
+
 function renderHeroCarousel(solution, coverImage, gallery) {
-  // Build slides: cover image first, then gallery images
-  const slides = [{ src: coverImage, type: 'image', caption: '' }];
+  // Build slides: cover image first, then gallery images (deduplicated by src)
+  const slides = [];
+  const seen = new Set();
+
+  const addSlide = (src, type = 'image', caption = '') => {
+    const normalizedSrc = String(src || '').trim();
+    if (!normalizedSrc || seen.has(normalizedSrc)) return;
+    seen.add(normalizedSrc);
+    slides.push({
+      src: normalizedSrc,
+      type,
+      caption: caption || '',
+      isGif: isGifSource(normalizedSrc),
+    });
+  };
+
+  addSlide(coverImage, 'image', '');
   for (const item of gallery) {
     // Use getAssetUrl for all paths - it handles /api/ paths, relative paths, and absolute URLs
     const src = getAssetUrl(solution.id, item.src);
-    slides.push({ src, type: item.type || 'image', caption: getLocalizedField(item, 'caption') });
+    addSlide(src, item.type || 'image', getLocalizedField(item, 'caption'));
   }
+
+  if (slides.length === 0) {
+    addSlide(PLACEHOLDER_IMAGE, 'image', '');
+  }
+
+  const renderHeroImage = (slide) => `
+    <img
+      class="hero-carousel-image${slide.isGif ? ' hero-carousel-image-contain' : ''}"
+      src="${slide.src}"
+      alt="${escapeHtml(slide.caption)}"
+      onerror="if(!this.dataset.err){this.dataset.err='1';this.src='${PLACEHOLDER_IMAGE}';}"
+    />
+  `;
 
   if (slides.length <= 1) {
     return `
       <div class="hero-carousel">
-        <img class="hero-carousel-image" src="${coverImage}" alt="" onerror="if(!this.dataset.err){this.dataset.err='1';this.src='${PLACEHOLDER_IMAGE}';}" />
+        ${renderHeroImage(slides[0])}
       </div>
     `;
   }
@@ -273,7 +305,7 @@ function renderHeroCarousel(solution, coverImage, gallery) {
       <div class="hero-carousel-track">
         ${slides.map((slide, i) => `
           <div class="hero-carousel-slide ${i === 0 ? 'active' : ''}" data-index="${i}">
-            <img class="hero-carousel-image" src="${slide.src}" alt="${escapeHtml(slide.caption)}" onerror="if(!this.dataset.err){this.dataset.err='1';this.src='${PLACEHOLDER_IMAGE}';}" />
+            ${renderHeroImage(slide)}
           </div>
         `).join('')}
       </div>

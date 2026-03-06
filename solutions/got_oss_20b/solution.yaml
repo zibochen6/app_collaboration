@@ -1,0 +1,46 @@
+version: "1.0"
+id: got_oss_20b
+name: GOT OSS 20B on Jetson
+name_zh: GOT OSS 20B on Jetson
+
+intro:
+  summary: One-click SSH deployment of GOT OSS 20B on NVIDIA Jetson with a prebuilt Docker image.
+  summary_zh: One-click SSH deployment of GOT OSS 20B on NVIDIA Jetson, with automatic web service startup.
+  description_file: description.md
+  description_file_zh: description_zh.md
+  cover_image: gallery/gpt-oss.gif
+  category: llm
+  tags: [jetson, llm, docker, edge-ai]
+
+  device_catalog:
+    recomputer_j4012:
+      name: reComputer J4012
+      name_zh: reComputer J4012
+      product_url: https://www.seeedstudio.com/reComputer-J4012-p-5586.html
+      description: NVIDIA Jetson edge AI computer for local LLM serving
+      description_zh: NVIDIA Jetson edge AI computer for local LLM serving
+
+  presets:
+    - id: jetson_got_oss
+      name: Jetson GOT OSS 20B Service
+      name_zh: Jetson GOT OSS 20B Service
+      description: Deploy GOT OSS 20B inference service to Jetson with one click.
+      description_zh: Deploy GOT OSS 20B inference service to Jetson with one click.
+      device_groups:
+        - id: edge_device
+          name: Edge Device
+          name_zh: Edge Device
+          type: single
+          required: true
+          options:
+            - device_ref: recomputer_j4012
+          default: recomputer_j4012
+
+  stats:
+    difficulty: beginner
+    estimated_time: 10min
+
+deployment:
+  guide_file: guide.md
+  guide_file_zh: guide_zh.md
+  selection_mode: sequential
